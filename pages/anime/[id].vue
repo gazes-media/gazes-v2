@@ -149,7 +149,10 @@ async function fetchWatchedEpisodes() {
 
 // Computed property for anime seasons to ensure consistency
 const animeSeasons = computed(() => {
-    return info.value?.seasons?.filter(season => season.type?.toLowerCase() === 'anime') || [];
+    return info.value?.seasons?.filter(season => {
+        const type = season.type?.toLowerCase();
+        return type === 'anime' || type === 'kai';
+    }) || [];
 });
 
 // Language options computed property - only show available languages

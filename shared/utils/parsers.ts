@@ -114,19 +114,19 @@ export function parseAnimePage(html: string): AnimeInfo {
     }
   }
 
-  // Deduplicate seasons - group by season number to avoid duplicates for different languages
-  const seasonMap = new Map<number, AnimeSeason>();
+  // Deduplicate seasons - use URL as the primary deduplication key to preserve distinct content
+  const seasonMap = new Map<string, AnimeSeason>();
   const uniqueSeasons = seasons.filter(s => {
-    // Extract season number from name or URL
-    const seasonNumber = extractSeasonNumber(s.name) || extractSeasonNumber(s.url) || 1;
+    // Create a unique key based on the content path (without language)
+    const contentPath = s.url.replace(/\/(vostfr|vf|va|var|vkr|vcn|vqc|vf1|vf2|vj|vo|raw|vq)$/, '');
 
-    // If we haven't seen this season number yet, or if this is a "real" season (not just a language variant)
-    if (!seasonMap.has(seasonNumber)) {
-      seasonMap.set(seasonNumber, s);
+    // If we haven't seen this content path yet, keep it
+    if (!seasonMap.has(contentPath)) {
+      seasonMap.set(contentPath, s);
       return true;
     }
 
-    // Keep the first occurrence of each season number
+    // This is a duplicate (same content, different language)
     return false;
   });
 
