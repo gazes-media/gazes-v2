@@ -154,10 +154,11 @@ import type { SearchResponse } from "../types/searchResponse";
 export function parseAnimeResults(html: string, baseUrl?: string): SearchResponse {
   const results: SearchResponse = [];
 
-  // Accept both the configured baseUrl and anime-sama.fr domain
+  // Accept both the configured baseUrl and anime-sama domains
   const acceptedDomains = [
     (baseUrl || 'https://179.43.149.218').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-    'https://anime-sama\\.fr'
+    'https://anime-sama\\.fr',
+    'https://anime-sama\\.org'
   ];
 
   const domainPattern = `(${acceptedDomains.join('|')})`;
@@ -255,8 +256,8 @@ export interface CatalogueItem {
 export function parseCataloguePage(html: string): CatalogueItem[] {
   const items: CatalogueItem[] = [];
 
-  // Regex to match catalogue items: <a href="/catalogue/slug"> or <a href="https://anime-sama.fr/catalogue/slug"> ... <img src="image"> ... <h1>title</h1> ... </a>
-  const itemRegex = /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h1[^>]*>([^<]*)<\/h1>/gi;
+  // Updated regex to match new structure: <a href="https://anime-sama.org/catalogue/slug/"> ... <img src="image"> ... <h2 class="card-title">title</h2> ... </a>
+  const itemRegex = /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h2[^>]*class="card-title"[^>]*>([^<]*)<\/h2>/gi;
 
   let match;
   while ((match = itemRegex.exec(html)) !== null) {
