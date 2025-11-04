@@ -1862,7 +1862,7 @@ async function resolveSourcesImmediately(candidateUrls: string[], targetLang: st
           referer,
           ...(debug.value ? { debug: "1" } : {}),
         },
-        timeout: 1500, // Fast timeout for immediate playback
+        timeout: 5000, // Increased timeout for better resolution success
       })
 
       if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
@@ -1881,6 +1881,9 @@ async function resolveSourcesImmediately(candidateUrls: string[], targetLang: st
           if (hlsFirst) {
             playUrl.value = hlsFirst.proxiedUrl || hlsFirst.url
             console.log(`🎬 Started playback immediately with provider ${index + 1}`)
+            console.log(`🔗 Using URL: ${hlsFirst.url}`)
+            console.log(`🔗 Direct URL: ${hlsFirst.directUrl}`)
+            console.log(`🔗 Proxied URL: ${hlsFirst.proxiedUrl}`)
           }
         }
 
@@ -1984,7 +1987,7 @@ async function resolveSourcesForLanguage(targetLang: string, candidateUrls: stri
             referer,
             ...(debug.value ? { debug: "1" } : {}),
           },
-          timeout: 1500, // Reduced to 1.5s for faster parallel resolution
+          timeout: 5000, // Increased timeout for better resolution success
         })
 
         if (resolveResponse?.ok && resolveResponse?.urls?.length > 0) {
@@ -2140,9 +2143,33 @@ async function resolveEpisode() {
     }
 
     // Start resolving sources immediately and begin playback as soon as one works
-    resolveSourcesImmediately(epUrls, lang.value).catch(error => {
-      console.error('Failed to resolve sources:', error)
-      resolveError.value = 'Erreur de résolution des sources'
+    resolveSourcesImmediately(epUrls, lang.value)
+      .then(() => {
+        console.log('✅ Resolution completed successfully')
+      })
+      .catch(error => {
+        console.error('❌ Failed to resolve sources:', error)
+
+        // Fallback: Use original URLs through proxy only (last resort)
+        console.warn('⚠️ Using original URLs as fallback sources (proxy only)')
+      const fallbackSources = epUrls.map(url => ({
+        type: 'unknown',
+        url: url,
+        directUrl: '', // Don't try embed URLs as direct URLs - they are HTML pages!
+        proxiedUrl: `/api/proxy?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(url)}&origin=${encodeURIComponent(new URL(url).origin)}&rewrite=1`,
+        quality: undefined,
+        provider: null
+      }))
+
+      // Only use fallback if we don't already have resolved sources
+      if (fallbackSources.length > 0 && !playUrl.value && resolvedList.value.length === 0) {
+        resolvedList.value = fallbackSources
+        currentSourceIndex.value = 0
+        playUrl.value = fallbackSources[0].proxiedUrl
+        console.log('🔄 Fallback: Started with original URLs through proxy')
+      } else if (!playUrl.value) {
+        resolveError.value = 'Erreur de résolution des sources'
+      }
     })
 
     // Pre-resolve sources for other available languages in background

@@ -33,32 +33,52 @@ const VIDEO_URL_PATTERNS = [
   },
   // Quoted URLs (common in JavaScript)
   {
-    regex: /["']https?:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov|flv)[^"']*["']/gi,
+    regex: /["'](https?:\/\/[^"']*\.(?:m3u8|mp4|webm|mkv|avi|mov|flv)[^"']*)["']/gi,
     type: 'quoted'
   },
   // JavaScript variables
   {
-    regex: /(?:var|const|let|window)\s+\w+\s*[:=]\s*["']https?:\/\/[^"']*\.(?:m3u8|mp4)[^"']*["']/gi,
+    regex: /(?:var|const|let|window)\s+\w+\s*[:=]\s*["'](https?:\/\/[^"']*\.(?:m3u8|mp4)[^"']*)["']/gi,
     type: 'javascript'
+  },
+  // JWPlayer configuration patterns
+  {
+    regex: /(?:hls4|hls3|hls2|file)\s*[:=]\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
+    type: 'jwplayer'
+  },
+  // JWPlayer sources array
+  {
+    regex: /sources\s*:\s*\[\s*\{\s*file\s*:\s*["']([^"']+\.(?:m3u8|mp4)[^"']*)["']/gi,
+    type: 'jwplayer_sources'
+  },
+  // Obfuscated video object patterns (common after decoding)
+  {
+    regex: /(?:hls4|hls3|hls2|file)\s*[:=]\s*["']([^"']+)["']/gi,
+    type: 'obfuscated_config'
+  },
+  // General video file patterns in quotes
+  {
+    regex: /["']([^"']*\.(?:m3u8|mp4|txt)[^"']*)["']/gi,
+    type: 'quoted_video'
   },
   // API endpoints
   {
-    regex: /["']https?:\/\/[^"']*(?:api|source|video|stream|player|embed)[^"']*["']/gi,
+    regex: /["'](https?:\/\/[^"']*(?:api|source|video|stream|player|embed)[^"']*)["']/gi,
     type: 'api'
   },
   // CDN patterns
   {
-    regex: /["']https?:\/\/[^"']*\.(?:cdn|stream|video|media)\.[^"']*\.(?:mp4|m3u8)[^"']*["']/gi,
+    regex: /["'](https?:\/\/[^"']*\.(?:cdn|stream|video|media)\.[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
     type: 'cdn'
   },
   // VidMoly specific
   {
-    regex: /["']https?:\/\/[^"']*vidmoly[^"']*\.(?:mp4|m3u8)[^"']*["']/gi,
+    regex: /["'](https?:\/\/[^"']*vidmoly[^"']*\.(?:mp4|m3u8)[^"']*)["']/gi,
     type: 'vidmoly'
   },
-  // SibNet relative URLs
+  // SibNet relative URLs (capture the URL part only)
   {
-    regex: /src\s*:\s*["'][^"']*\/v\/[^"']*\.mp4["']/gi,
+    regex: /src\s*:\s*["']([^"']*\/v\/[^"']*\.mp4)["']/gi,
     type: 'sibnet_relative'
   }
 ] as const
@@ -102,9 +122,9 @@ function validateUrl(candidate: string): { isValid: boolean; url?: string; error
 
     const url = new URL(cleanUrl)
     
-    // Enforce HTTPS only for security
-    if (url.protocol !== 'https:') {
-      return { isValid: false, error: 'Only HTTPS URLs allowed' }
+    // Allow both HTTP and HTTPS for video URLs (many video CDNs use HTTP)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      return { isValid: false, error: 'Only HTTP and HTTPS URLs allowed' }
     }
 
     // Check for blocked hosts
@@ -275,8 +295,46 @@ function analyzeVidMolyJavaScript(html: string): { type: string; url: string; qu
   return urls
 }
 
+// Helper function to decode JavaScript packed/obfuscated code
+function decodeJavaScriptPacker(html: string): string {
+  // Look for eval(function(p,a,c,k,e,d){...}) patterns (Dean Edwards packer)
+  const packerPattern = /eval\(function\(p,a,c,k,e,d\)\{[^}]*?return p\}\('([^']+)',(\d+),(\d+),'([^']+)'\.split\('\|'\)\)\)/g
+  let decodedHtml = html
+
+  let match
+  while ((match = packerPattern.exec(html)) !== null) {
+    try {
+      const packed = match[1]
+      const radix = parseInt(match[2])
+      const count = parseInt(match[3])
+      const keywords = match[4].split('|')
+
+      console.log(`🔓 Found packed JavaScript: radix=${radix}, count=${count}, keywords=${keywords.length}`)
+
+      // Decode the packed function
+      let decoded = packed
+      for (let i = count - 1; i >= 0; i--) {
+        if (keywords[i]) {
+          const pattern = new RegExp('\\b' + i.toString(radix) + '\\b', 'g')
+          decoded = decoded.replace(pattern, keywords[i])
+        }
+      }
+
+      decodedHtml += '\n' + decoded
+      console.log('🔓 Decoded JavaScript packer content, length:', decoded.length)
+
+      // Log first 200 chars of decoded content
+      console.log('🔓 Decoded preview:', decoded.substring(0, 200))
+    } catch (error) {
+      console.warn('Failed to decode JavaScript packer:', error)
+    }
+  }
+
+  return decodedHtml
+}
+
 // Optimized URL extraction with early termination
-async function extractVideoUrls(html: string): Promise<{ type: string; url: string; quality?: string }[]> {
+async function extractVideoUrls(html: string, originalUrl: string): Promise<{ type: string; url: string; quality?: string }[]> {
   // Early size check to prevent processing huge documents
   if (html.length > EXTRACTION_CONFIG.MAX_HTML_SIZE) {
     console.warn(`⚠️ HTML too large (${html.length} bytes), truncating to ${EXTRACTION_CONFIG.MAX_HTML_SIZE} bytes`)
@@ -286,6 +344,14 @@ async function extractVideoUrls(html: string): Promise<{ type: string; url: stri
   if (html.length === 0) {
     console.warn('⚠️ Empty HTML content')
     return []
+  }
+
+  // Decode JavaScript packed/obfuscated code
+  html = decodeJavaScriptPacker(html)
+
+  // Debug: Log if we found any potential video configuration
+  if (html.includes('jwplayer') || html.includes('hls') || html.includes('file:')) {
+    console.log('🎯 Found video player configuration in decoded content')
   }
 
   const urls: { type: string; url: string; quality?: string }[] = []
@@ -332,6 +398,13 @@ async function extractVideoUrls(html: string): Promise<{ type: string; url: stri
         let processedCandidate = candidate
         if (pattern.type === 'sibnet_relative' && !candidate.startsWith('http')) {
           processedCandidate = `https://video.sibnet.ru${candidate.startsWith('/') ? '' : '/'}${candidate}`
+        } else if ((pattern.type === 'obfuscated_config' || pattern.type === 'quoted_video') && !candidate.startsWith('http')) {
+          // For obfuscated configs and quoted videos, try to construct full URLs
+          if (candidate.includes('.m3u8') || candidate.includes('.mp4') || candidate.includes('.txt')) {
+            // Extract the base URL from the embed URL
+            const baseUrl = originalUrl.replace(/\/embed\/.*$/, '')
+            processedCandidate = `${baseUrl}${candidate.startsWith('/') ? '' : '/'}${candidate}`
+          }
         }
 
         const validation = validateUrl(processedCandidate)
@@ -485,15 +558,25 @@ async function performResolution(url: string, referer: string, query: any) {
       const html = await response.text()
       
       // Extract video URLs from HTML
-      const extractedUrls = await extractVideoUrls(html)
+      const extractedUrls = await extractVideoUrls(html, url)
       
       // Remove duplicates and format for frontend
       const uniqueUrls = new Map<string, any>()
       for (const urlData of extractedUrls) {
         if (!uniqueUrls.has(urlData.url)) {
           const providerInfo = getProviderInfo(urlData.url)
+          // Determine video type based on URL extension
+          let videoType = 'unknown'
+          if (urlData.url.includes('.m3u8')) {
+            videoType = 'hls'
+          } else if (urlData.url.includes('.mp4')) {
+            videoType = 'mp4'
+          } else if (urlData.url.includes('.webm')) {
+            videoType = 'webm'
+          }
+
           uniqueUrls.set(urlData.url, {
-            type: urlData.type === 'hls' ? 'hls' : urlData.type === 'mp4' ? 'mp4' : 'unknown',
+            type: videoType,
             url: urlData.url,
             directUrl: urlData.url, // Direct URL for CORS-compatible sources
             proxiedUrl: `/api/proxy?url=${encodeURIComponent(urlData.url)}&referer=${encodeURIComponent(url)}&origin=${encodeURIComponent(new URL(url).origin)}&rewrite=1`,
@@ -522,9 +605,15 @@ async function performResolution(url: string, referer: string, query: any) {
         }
       })
       
+      // Transform URLs to use proxy for CORS handling
+      const proxiedUrls = finalUrls.map(urlData => ({
+        ...urlData,
+        url: `/api/proxy?url=${encodeURIComponent(urlData.url)}&referer=${encodeURIComponent(referer || url)}&origin=${encodeURIComponent(new URL(urlData.url).origin)}&rewrite=1`
+      }))
+
       return {
         ok: true,
-        urls: finalUrls,
+        urls: proxiedUrls,
         message: `Fetched ${html.length} bytes. Found ${finalUrls.length} unique video URLs, sorted by provider reliability.`
       }
       
