@@ -1669,6 +1669,28 @@ function toggleEpisodesPanel() {
   }
 }
 
+function downloadVideo() {
+  if (!playUrl.value) return
+
+  // Create filename: [Gazes] Anime Title - S01E01.mp4
+  const filename = `[Gazes] ${animeTitle.value} - S${season.value}E${episodeNum.value.toString().padStart(2, '0')}.mp4`
+  
+  // Create temporary link
+  const link = document.createElement('a')
+  link.href = playUrl.value
+  link.download = filename
+  link.target = '_blank' // Fallback for cross-origin
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  
+  // Show feedback
+  notice.value = 'Téléchargement lancé...'
+  setTimeout(() => {
+    notice.value = ''
+  }, 2000)
+}
+
 
 
 onBeforeUnmount(() => {
@@ -2577,6 +2599,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
       @select-quality="selectQuality"
       @toggle-fullscreen="toggleFullscreen"
       @toggle-episodes="toggleEpisodesPanel"
+      @download="downloadVideo"
       @interaction="showControlsTemporarily"
     />
 

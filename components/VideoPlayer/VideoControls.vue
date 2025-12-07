@@ -144,6 +144,12 @@
             </div>
           </div>
           
+
+          <!-- Download -->
+          <button @click="$emit('download')" class="p-2 hover:bg-white/10 rounded-full transition-colors hidden sm:block">
+            <Icon name="heroicons:arrow-down-tray" class="w-5 h-5 md:w-6 md:h-6" />
+          </button>
+          
           <!-- Fullscreen -->
            <button @click="$emit('toggle-fullscreen')" class="p-2 hover:bg-white/10 rounded-full transition-colors">
             <Icon :name="isFullscreen ? 'heroicons:arrows-pointing-in' : 'heroicons:arrows-pointing-out'" class="w-5 h-5 md:w-6 md:h-6" />
@@ -175,7 +181,7 @@ const props = defineProps<{
 const emit = defineEmits([
   'toggle-play', 'seek-by', 'toggle-mute', 'set-volume', 
   'seek-to', 'set-speed', 'select-quality', 'toggle-fullscreen',
-  'interaction', 'toggle-episodes'
+  'interaction', 'toggle-episodes', 'download'
 ])
 
 // Local state for UI toggles
