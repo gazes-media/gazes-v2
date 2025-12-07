@@ -74,6 +74,9 @@ const loadVideoJS = async () => {
 import { onBeforeUnmount, onMounted, ref, watch, nextTick, computed } from 'vue'
 import { formatSeasonDisplay } from '~/shared/utils/season'
 import { getProviderInfo } from '~/shared/utils/videoProviders'
+import VideoControls from '~/components/VideoPlayer/VideoControls.vue'
+import EpisodeSelector from '~/components/VideoPlayer/EpisodeSelector.vue'
+import VideoOverlay from '~/components/VideoPlayer/VideoOverlay.vue'
 
 // Use player layout (no navbar)
 definePageMeta({
@@ -2438,542 +2441,145 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
 </script>
 
 <template>
-  <!-- Full viewport video player like Netflix with custom controls -->
   <div
     class="fixed inset-0 bg-black z-50 flex flex-col h-screen overflow-hidden"
     @mousemove="handleMouseMove"
+    @touchstart="handleMouseMove"
   >
-    <!-- Top navigation overlay -->
-    <div class="absolute top-0 left-0 right-0 z-20">
-      <div class="bg-gradient-to-b from-black/80 via-black/40 to-transparent p-4 md:p-6">
-        <div class="flex items-center justify-between text-white">
-          <div class="flex items-center gap-4">
-            <NuxtLink :to="`/anime/${id}`" class="flex items-center gap-2 hover:text-zinc-300 transition-colors">
-              <Icon name="heroicons:arrow-left" class="w-5 h-5" />
-              <span class="text-sm font-medium">Retour</span>
-            </NuxtLink>
-            <div class="h-5 w-px bg-white/30"></div>
-            <NuxtLink to="/" class="flex items-center gap-2 hover:text-zinc-300 transition-colors">
-              <Icon name="heroicons:home" class="w-5 h-5" />
-              <span class="text-sm font-medium">Accueil</span>
-            </NuxtLink>
-            <div class="h-5 w-px bg-white/30"></div>
-            <div class="flex flex-col">
-              <div class="text-base font-medium text-white">
-                {{ animeTitle || `Anime ${id}` }}
-              </div>
-              <div class="text-sm text-zinc-300">
-                {{ currentEpisodeTitle || formattedEpisodeDisplay }} • {{ formattedSeasonDisplay }} • {{ lang.toUpperCase() }}
-              </div>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <button v-if="resolvedList.length > 1" @click="tryNextSource" class="p-2 hover:bg-white/10 rounded-full transition-colors" title="Source alternative">
-              <Icon name="heroicons:arrow-path" class="w-5 h-5" />
-            </button>
-          </div>
-        </div>
+    <!-- Overlay: Top Nav, Loading, Error -->
+    <VideoOverlay
+      :title="animeTitle || `Anime ${id}`"
+      :subtitle="`${currentEpisodeTitle || formattedEpisodeDisplay} • ${formattedSeasonDisplay} • ${lang.toUpperCase()}`"
+      :back-link="`/anime/${id}`"
+      :notice="notice"
+      :resolving="resolving"
+      :error="resolveError"
+      :loading="videoLoading"
+      :buffering="isBuffering"
+      :buffer-progress="bufferProgress"
+      :show-controls="showControls"
+      @retry="resolveEpisode"
+    />
 
-        <!-- Notice banner -->
-        <div v-if="notice" class="mt-3 px-4 py-2 bg-amber-600/90 rounded-lg text-amber-100 text-sm">
-          {{ notice }}
-        </div>
-      </div>
-    </div>
+    <!-- Main video container -->
+    <div class="flex-1 relative bg-black min-h-0" @click="showEpisodes = false">
+      <video
+        ref="videoRef"
+        class="w-full h-full object-contain cursor-pointer"
+        preload="metadata"
+        autoplay
+        crossorigin="anonymous"
+        @click="handleVideoClick"
+        @dblclick="handleVideoDoubleClick"
+      >
+        Votre navigateur ne supporte pas la lecture vidéo.
+      </video>
 
-    <!-- Main video container - takes all available space -->
-    <div class="flex-1 relative bg-black min-h-0">
-      <!-- Loading state -->
-      <div v-if="resolving" class="absolute inset-0 flex items-center justify-center text-white">
-        <div class="flex flex-col items-center justify-center text-white">
-          <div class="w-16 h-16 border-2 border-white/20 border-t-violet-500 rounded-full animate-spin mb-4 mx-auto"></div>
-          <p class="text-lg font-medium text-center">Recherche de sources vidéo...</p>
-          <p class="text-sm text-zinc-400 mt-2">Cela peut prendre quelques secondes</p>
-        </div>
-      </div>
-
-      <!-- Error state -->
-      <div v-else-if="resolveError" class="absolute inset-0 flex items-center justify-center text-white">
-        <div class="text-center max-w-md px-6">
-          <Icon name="heroicons:exclamation-triangle" class="w-16 h-16 mx-auto mb-4 text-red-400" />
-          <h3 class="text-xl font-semibold mb-2">Épisode non disponible</h3>
-          <p class="text-zinc-300 mb-4">Impossible de trouver des sources pour cet épisode.</p>
-          <div class="text-sm text-zinc-400 mb-6">
-            <p>Solutions possibles :</p>
-            <ul class="text-left mt-2 space-y-1">
-              <li>• Essayer une autre langue</li>
-              <li>• Vérifier plus tard (sources peuvent être ajoutées)</li>
-              <li>• Vérifier votre connexion internet</li>
-            </ul>
-          </div>
-          <div class="flex flex-wrap gap-2 justify-center">
-            <button @click="resolveEpisode" class="bg-violet-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-violet-700 transition-colors">
-              Réessayer
-            </button>
-          </div>
-        </div>
+      <!-- Skip Buttons Overlay -->
+      <div v-if="showSkipButtons" class="absolute bottom-32 right-8 z-30 flex flex-col gap-2">
+        <!-- Skip Intro -->
+        <button
+          v-if="currentSkipType === 'op'"
+          @click="skipOp"
+          class="bg-white text-black px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors shadow-lg animate-slide-in-right group"
+        >
+          <span>Passer l'intro</span>
+          <Icon name="heroicons:forward" class="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+        </button>
+        <!-- Skip Outro -->
+        <button
+          v-if="currentSkipType === 'ed'"
+          @click="skipEd"
+          class="bg-white text-black px-6 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors shadow-lg animate-slide-in-right group"
+        >
+          <span>Passer l'outro</span>
+          <Icon name="heroicons:forward" class="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+        </button>
       </div>
 
-      <!-- Video player -->
-      <div v-else class="w-full h-full relative" @click="showEpisodes = false">
-        <!-- Video loading overlay -->
-        <div v-if="videoLoading" class="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-30">
-          <div class="flex flex-col items-center justify-center text-white">
-            <!-- Buffering indicator -->
-            <div v-if="isBuffering" class="mb-4">
-              <div class="w-16 h-16 border-4 border-violet-600/30 border-t-violet-600 rounded-full animate-spin mb-4 mx-auto"></div>
-              <div class="w-32 h-2 bg-white/20 rounded-full overflow-hidden">
-                <div
-                  class="h-full bg-violet-600 transition-all duration-300"
-                  :style="{ width: bufferProgress + '%' }"
-                ></div>
-              </div>
-            </div>
-            <!-- Regular loading -->
-            <div v-else class="w-16 h-16 border-2 border-white/20 border-t-white rounded-full animate-spin mb-4 mx-auto"></div>
-            <!-- Loading text -->
-            <p class="text-lg font-medium text-center">
-              {{ isBuffering ? 'Chargement en cours...' : 'Préparation de la vidéo...' }}
-            </p>
-            <p v-if="isBuffering" class="text-sm text-zinc-400 mt-2">
-              {{ Math.round(bufferProgress) }}% mis en buffer
-            </p>
-            <p v-else class="text-sm text-zinc-400 mt-2">
-              Connexion à la source vidéo...
-            </p>
-          </div>
-        </div>
-
-        <!-- Video element - no native controls -->
-        <video
-          ref="videoRef"
-          class="w-full h-full object-contain cursor-pointer"
-          preload="metadata"
-          autoplay
-          crossorigin="anonymous"
-          @click="handleVideoClick"
-          @dblclick="handleVideoDoubleClick"
-        >
-          Votre navigateur ne supporte pas la lecture vidéo. Veuillez utiliser un navigateur moderne.
-        </video>
-
-        <!-- Episode Selector Panel (Netflix-style) -->
-        <div
-          v-if="showEpisodes"
-          class="absolute right-4 bottom-24 w-96 max-h-[32rem] bg-zinc-900/95 backdrop-blur-sm border border-zinc-700 rounded-lg overflow-hidden z-30 shadow-2xl"
-          @click.stop
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between p-4 border-b border-zinc-700">
-            <div>
-              <h3 class="text-white font-semibold text-lg">Épisodes</h3>
-              <p class="text-zinc-400 text-sm">{{ formattedSeasonDisplay }} • {{ lang.toUpperCase() }}</p>
-            </div>
-            <button @click="showEpisodes = false" class="text-zinc-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded">
-              <Icon name="heroicons:x-mark" class="w-5 h-5" />
-            </button>
-          </div>
-
-          <!-- Episodes List -->
-          <div ref="episodesScrollContainer" class="max-h-80 overflow-y-auto custom-scrollbar">
-            <div v-if="loadingEpisodes" class="p-6 text-center text-zinc-400">
-              <div class="w-8 h-8 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-              <p>Chargement des épisodes...</p>
-            </div>
-
-            <div v-else-if="episodesList.length === 0" class="p-6 text-center text-zinc-400">
-              <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-zinc-500" />
-              <p>Aucun épisode trouvé</p>
-            </div>
-
-            <div v-else class="divide-y divide-zinc-800">
-              <button
-                v-for="(ep, index) in episodesList"
-                :key="ep.episode"
-                :data-episode="ep.episode"
-                @click="selectEpisode(ep.episode)"
-                class="w-full p-4 text-left hover:bg-zinc-800/50 transition-all duration-200 flex items-center gap-4 group relative"
-                :class="ep.episode === episodeNum ? 'bg-violet-600/10 border-l-4 border-violet-500' : 'hover:border-l-4 hover:border-zinc-600'"
-              >
-                <!-- Episode thumbnail/number -->
-                <div class="flex-shrink-0 w-20 h-12 bg-zinc-800 rounded-md overflow-hidden flex items-center justify-center relative group-hover:bg-zinc-700 transition-colors">
-                  <span class="text-white font-bold text-lg">{{ ep.episode.toString().padStart(2, '0') }}</span>
-                  <div v-if="ep.episode === episodeNum" class="absolute inset-0 bg-violet-600/20 flex items-center justify-center">
-                    <Icon name="heroicons:play-circle" class="w-6 h-6 text-violet-400" />
-                  </div>
-                  <div v-else class="absolute inset-0 bg-black/0 group-hover:bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                    <Icon name="heroicons:play" class="w-5 h-5 text-white" />
-                  </div>
-                </div>
-
-                <!-- Episode info -->
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-2 mb-1">
-                    <h4 class="text-white font-medium text-base">
-                      {{ ep.title || `Épisode ${ep.episode.toString().padStart(2, '0')}` }}
-                    </h4>
-                  </div>
-                  <p class="text-zinc-400 text-sm">
-                    {{ ep.episode === episodeNum ? 'Vous regardez actuellement cet épisode' : (ep.title ? `Épisode ${ep.episode.toString().padStart(2, '0')} • ${season}` : `Épisode ${ep.episode.toString().padStart(2, '0')} de la saison ${season}`) }}
-                  </p>
-                </div>
-
-                <!-- Play indicator -->
-                <div class="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Icon name="heroicons:chevron-right" class="w-5 h-5 text-zinc-400" />
-                </div>
-              </button>
+       <!-- Next Episode Auto-Play Overlay -->
+      <div 
+        v-if="showNextEpisodeOverlay" 
+        class="absolute bottom-32 right-8 z-30 bg-zinc-900/90 backdrop-blur-md border border-zinc-700 p-4 rounded-xl shadow-2xl animate-slide-in-right max-w-sm"
+      >
+        <div class="flex items-start gap-4">
+          <div class="flex-1">
+            <h4 class="text-zinc-400 text-xs uppercase font-bold tracking-wider mb-1">Prochain épisode</h4>
+            <div class="text-white font-medium mb-2">Épisode {{ episodeNum + 1 }}</div>
+            <div class="h-1 w-full bg-zinc-700 rounded-full overflow-hidden">
+              <div 
+                class="h-full bg-violet-600 transition-all duration-1000 ease-linear"
+                :style="{ width: `${(nextEpisodeCountdown / 10) * 100}%` }"
+              ></div>
             </div>
           </div>
+          <button 
+            @click="playNextEpisode"
+            class="bg-white text-black p-3 rounded-full hover:bg-zinc-200 transition-colors"
+          >
+            <Icon name="heroicons:play" class="w-6 h-6" />
+          </button>
+          <button 
+            @click="cancelNextEpisodeCountdown" 
+            class="text-zinc-400 hover:text-white mt-1"
+          >
+            <Icon name="heroicons:x-mark" class="w-5 h-5" />
+          </button>
         </div>
+      </div>
 
-        <!-- Custom Controls Overlay - Fixed to bottom with proper spacing -->
-        <div
-          class="absolute bottom-0 left-0 right-0 transition-opacity duration-200 pointer-events-none z-20"
-          :class="showControls ? 'opacity-100' : 'opacity-0'"
-          @click.stop
-          @mouseenter="showControlsTemporarily"
-        >
-          <!-- Bottom controls container -->
-          <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pb-4 pt-8 md:px-6 md:pb-6 pointer-events-auto">
-            <!-- Progress bar -->
-            <div class="mb-3">
-              <div
-                class="relative h-1 bg-white/20 rounded-full cursor-pointer hover:h-2 transition-all duration-200"
-                :class="{ 'opacity-75': isSeeking }"
-                @click="handleProgressClick"
-                @mouseenter="isDragging = true"
-                @mouseleave="isDragging = false"
-              >
-                <!-- Seeking indicator -->
-                <div
-                  v-if="isSeeking"
-                  class="absolute inset-0 bg-blue-500/20 rounded-full flex items-center justify-center"
-                >
-                  <div class="flex items-center gap-2 text-white text-xs">
-                    <div class="w-3 h-3 border border-white/60 border-t-transparent rounded-full animate-spin"></div>
-                    <span>Chargement...</span>
-                  </div>
-                </div>
-
-                <!-- Buffered progress -->
-                <div
-                  class="absolute top-0 left-0 h-full bg-white/40 rounded-full"
-                  :style="{ width: bufferedPercent + '%' }"
-                ></div>
-                <!-- Current progress -->
-                <div
-                  class="absolute top-0 left-0 h-full bg-violet-600 rounded-full transition-all duration-100"
-                  :style="{ width: progressPercent + '%' }"
-                ></div>
-                <!-- Progress handle -->
-                <div
-                  class="absolute top-1/2 transform -translate-y-1/2 w-3 h-3 bg-violet-600 rounded-full opacity-0 hover:opacity-100 transition-opacity duration-200"
-                  :style="{ left: progressPercent + '%', marginLeft: '-6px' }"
-                ></div>
-              </div>
-            </div>
-
-            <!-- Control buttons and info -->
-            <div class="flex items-center justify-between text-white">
-              <div class="flex items-center gap-2 md:gap-3">
-                <!-- Play/Pause -->
-                <button @click="togglePlay" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
-                  <Icon :name="isPlaying ? 'heroicons:pause' : 'heroicons:play'" class="w-6 h-6 md:w-6 md:h-6" />
-                </button>
-
-                <!-- Skip back/forward -->
-                <button @click="seekBy(-10)" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Reculer 10s">
-                  <Icon name="heroicons:backward" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-                <button @click="seekBy(10)" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Avancer 10s">
-                  <Icon name="heroicons:forward" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-
-                <!-- Volume control -->
-                <button @click="toggleMute" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
-                  <Icon
-                    :name="isMuted ? 'heroicons:speaker-x-mark' : 'heroicons:speaker-wave'"
-                    class="w-5 h-5 md:w-5 md:h-5"
-                  />
-                </button>
-                <div class="w-16 md:w-16 h-2 md:h-1 bg-white/20 rounded-full relative group">
-                  <div class="h-full bg-violet-600 rounded-full" :style="{ width: (volume * 100) + '%' }"></div>
-                  <!-- Volume handle dot -->
-                  <div
-                    class="absolute top-1/2 transform -translate-y-1/2 w-4 h-4 md:w-3 md:h-3 bg-violet-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-white/50"
-                    :style="{ left: (volume * 100) + '%', marginLeft: '-8px md:-6px' }"
-                  ></div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    :value="volume"
-                    @input="setVolume(parseFloat(($event.target as HTMLInputElement).value))"
-                    class="absolute inset-0 w-full opacity-0 cursor-pointer"
-                  />
-                </div>
-
-                <!-- Time display -->
-                <div class="text-sm text-zinc-300 whitespace-nowrap">
-                  {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
-                </div>
-              </div>
-
-              <div class="flex items-center gap-1 md:gap-2">
-                <!-- Playback speed -->
-                <div class="relative">
-                  <button
-                    @click="toggleSpeedDropdown"
-                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
-                    :title="'Vitesse de lecture'"
-                  >
-                    <span>{{ playbackSpeed }}x</span>
-                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showSpeedDropdown }" />
-                  </button>
-
-                  <!-- Speed dropdown menu -->
-                  <div
-                    v-if="showSpeedDropdown"
-                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-24 overflow-hidden"
-                    @click.stop
-                  >
-                    <div class="py-1">
-                      <button
-                        v-for="speed in speedOptions"
-                        :key="speed"
-                        @click="setPlaybackSpeed(speed)"
-                        :disabled="speed === playbackSpeed"
-                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors"
-                        :class="{ 'bg-zinc-700 text-white': speed === playbackSpeed, 'text-zinc-300': speed !== playbackSpeed }"
-                      >
-                        {{ speed }}x
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Skip toggle -->
-                <button
-                  @click="skipEnabled = !skipEnabled"
-                  :class="skipEnabled ? 'text-violet-400' : 'text-zinc-400'"
-                  class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation"
-                  :title="skipEnabled ? 'Désactiver le saut automatique' : 'Activer le saut automatique'"
-                >
-                  <Icon name="heroicons:forward" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-
-                <!-- Quality selector -->
-                <div v-if="resolvedList.length > 1" class="relative">
-                  <button
-                    @click="toggleQualityDropdown"
-                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
-                    title="Qualité"
-                  >
-                    <Icon name="heroicons:cog-6-tooth" class="w-4 h-4" />
-                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showQualityDropdown }" />
-                  </button>
-
-                  <!-- Quality dropdown menu -->
-                  <div
-                    v-if="showQualityDropdown"
-                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-48 overflow-hidden"
-                    @click.stop
-                  >
-                    <div class="py-1">
-                      <button
-                        v-for="(source, index) in resolvedList"
-                        :key="index"
-                        @click="selectQuality(source)"
-                        :disabled="source.proxiedUrl === playUrl"
-                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2"
-                        :class="{ 'bg-zinc-700 text-white': source.proxiedUrl === playUrl, 'text-zinc-300': source.proxiedUrl !== playUrl }"
-                      >
-                        <Icon name="heroicons:play" class="w-3 h-3 flex-shrink-0" />
-                        <span class="truncate flex-1">{{ source.quality || source.type.toUpperCase() }}</span>
-                        <span class="text-xs opacity-75">{{ source.type }}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Episodes -->
-                <button @click="toggleEpisodesPanel" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation" title="Épisodes">
-                  <Icon name="heroicons:list-bullet" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-
-                <!-- Language selector -->
-                <div v-if="languageOptions.length > 1" class="relative">
-                  <button
-                    @click="showLanguageDropdown = !showLanguageDropdown"
-                    class="flex items-center gap-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors text-sm font-medium"
-                    title="Changer de langue"
-                  >
-                    <span>{{ currentLanguageDisplay.name }}</span>
-                    <Icon name="heroicons:chevron-down" class="w-3 h-3 transition-transform" :class="{ 'rotate-180': showLanguageDropdown }" />
-                  </button>
-
-                  <!-- Language dropdown menu -->
-                  <div
-                    v-if="showLanguageDropdown"
-                    class="absolute bottom-full right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50 w-32 overflow-hidden"
-                    @click.stop
-                  >
-                    <div class="py-1">
-                      <button
-                        v-for="langOption in languageOptions"
-                        :key="langOption.code"
-                        @click="switchLanguage(langOption.code)"
-                        :disabled="langOption.code === lang"
-                        class="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 transition-colors flex items-center gap-2"
-                        :class="{ 'bg-zinc-700 text-white': langOption.code === lang, 'text-zinc-300': langOption.code !== lang }"
-                      >
-                        <Icon name="heroicons:language" class="w-3 h-3 flex-shrink-0" />
-                        <span class="truncate flex-1">{{ langOption.name }}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Picture-in-Picture -->
-                <button
-                  v-if="pictureInPictureEnabled"
-                  @click="togglePictureInPicture"
-                  class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation"
-                  :title="isPictureInPicture ? 'Quitter Picture-in-Picture' : 'Picture-in-Picture'"
-                >
-                  <Icon :name="isPictureInPicture ? 'heroicons:arrows-pointing-in' : 'heroicons:rectangle-stack'" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-
-                <!-- Fullscreen -->
-                <button @click="toggleFullscreen" class="p-3 md:p-2 hover:bg-white/10 rounded-full transition-colors touch-manipulation">
-                  <Icon :name="isFullscreen ? 'heroicons:arrows-pointing-in' : 'heroicons:arrows-pointing-out'" class="w-5 h-5 md:w-5 md:h-5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Video error overlay -->
-        <div v-if="videoError" class="absolute inset-0 bg-black/80 flex items-center justify-center z-40">
-          <div class="text-center text-white max-w-md px-6">
-            <Icon name="heroicons:exclamation-triangle" class="w-12 h-12 mx-auto mb-3 text-red-400" />
-            <h4 class="text-lg font-medium mb-2">Problème de lecture</h4>
-            <p class="text-zinc-300 mb-4">La vidéo ne peut pas être lue correctement.</p>
-            <div class="flex flex-wrap gap-2 justify-center">
-              <button @click="setupVideo" class="bg-violet-600 text-white px-4 py-2 rounded font-medium hover:bg-violet-700 transition-colors">
-                Recharger la vidéo
-              </button>
-              <button v-if="resolvedList.length > 1" @click="tryNextSource" class="bg-zinc-700 text-white px-4 py-2 rounded font-medium hover:bg-zinc-600 transition-colors">
-                Essayer une autre source
-              </button>
-            </div>
-            <div class="mt-4 text-xs text-zinc-500">
-              Si le problème continue, la source peut être temporairement indisponible.
-            </div>
-          </div>
-        </div>
-
-
-        <!-- Touch seek overlay -->
-        <div
-          v-if="touchSeekOverlay"
-          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 rounded-lg p-4 text-white text-center"
-        >
-          <Icon name="heroicons:forward" class="w-8 h-8 mx-auto mb-2" />
-          <p class="text-sm">{{ touchSeekTime }}s</p>
-        </div>
-
-        <!-- Next episode auto-play overlay -->
-        <div
-          v-if="showNextEpisodeOverlay"
-          class="absolute inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-40"
-        >
-          <div class="text-center text-white max-w-md px-6">
-            <div class="mb-4">
-              <Icon name="heroicons:play-circle" class="w-16 h-16 mx-auto mb-4 text-violet-400" />
-              <h3 class="text-xl font-semibold mb-2">Épisode suivant</h3>
-              <p class="text-zinc-300 mb-4">
-                {{ episodesList.find(ep => ep.episode === episodeNum + 1)?.title || `Épisode ${episodeNum + 1}` }}
-              </p>
-              <div class="w-16 h-16 mx-auto mb-4 border-4 border-violet-600 border-t-transparent rounded-full animate-spin"></div>
-              <p class="text-sm text-zinc-400">Lecture automatique dans {{ nextEpisodeCountdown }}s</p>
-            </div>
-            <div class="flex gap-3 justify-center">
-              <button
-                @click="playNextEpisode"
-                class="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                <Icon name="heroicons:play" class="w-5 h-5" />
-                <span>Lire maintenant</span>
-              </button>
-              <button
-                @click="cancelNextEpisodeCountdown"
-                class="bg-zinc-700 hover:bg-zinc-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-              >
-                Annuler
-              </button>
-            </div>
-            <div class="mt-4">
-              <label class="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="autoPlayNext"
-                  @change="toggleAutoPlayNext"
-                  class="rounded border-zinc-600 text-violet-600 focus:ring-violet-500"
-                />
-                <span>Lecture automatique activée</span>
-              </label>
-             </div>
-           </div>
+       <!-- Touch Seek Feedback -->
+       <div 
+         v-if="touchSeekOverlay"
+         class="absolute inset-0 flex items-center justify-center pointer-events-none z-40 bg-black/20"
+       >
+         <div class="flex flex-col items-center justify-center bg-black/60 backdrop-blur-md rounded-full w-24 h-24 text-white">
+            <Icon :name="touchSeekTime > 0 ? 'heroicons:forward' : 'heroicons:backward'" class="w-8 h-8 mb-1" />
+            <span class="text-xs font-bold">{{ touchSeekTime > 0 ? '+' : '' }}{{ touchSeekTime }}s</span>
          </div>
        </div>
 
-         <!-- Skip buttons overlay -->
-        <div
-          v-if="showSkipButtons && currentSkipType"
-          class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 transition-opacity duration-300"
-        >
-          <div class="bg-black/80 backdrop-blur-sm rounded-lg p-4 text-center text-white">
-            <div class="text-sm text-zinc-300 mb-2">
-              {{ currentSkipType === 'op' ? 'Générique de début' : 'Générique de fin' }}
-        </div>
-            <button
-              @click="skipToEnd(currentSkipType)"
-              class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center gap-2 mx-auto"
-            >
-              <Icon name="heroicons:forward" class="w-4 h-4" />
-              <span>Sauter</span>
-            </button>
-            <button
-              @click="hideSkipButtons"
-              class="text-xs text-zinc-400 hover:text-zinc-300 mt-2 block mx-auto transition-colors"
-            >
-              Masquer
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
+
+    <!-- Episode Selector -->
+    <EpisodeSelector
+      :show="showEpisodes"
+      :episodes="episodesList"
+      :loading="loadingEpisodes"
+      :current-episode="episodeNum"
+      :season="season"
+      :season-display="formattedSeasonDisplay"
+      :lang="lang"
+      @close="showEpisodes = false"
+      @select="selectEpisode"
+    />
+
+    <!-- Video Controls -->
+    <VideoControls
+      :show="showControls"
+      :is-playing="isPlaying"
+      :is-muted="isMuted"
+      :volume="volume"
+      :current-time="currentTime"
+      :duration="duration"
+      :buffered="buffered"
+      :is-seeking="isSeeking"
+      :playback-speed="playbackSpeed"
+      :is-fullscreen="isFullscreen"
+      :sources="resolvedList"
+      :current-source-url="playUrl"
+      @toggle-play="togglePlay"
+      @seek-by="seekBy"
+      @toggle-mute="toggleMute"
+      @set-volume="setVolume"
+      @seek-to="seek"
+      @set-speed="setPlaybackSpeed"
+      @select-quality="selectQuality"
+      @toggle-fullscreen="toggleFullscreen"
+      @toggle-episodes="showEpisodes = !showEpisodes"
+      @interaction="showControlsTemporarily"
+    />
+
+  </div>
 </template>
 
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(39, 39, 42, 0.5);
-  border-radius: 3px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(161, 161, 170, 0.5);
-  border-radius: 3px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(161, 161, 170, 0.8);
-}
-</style>
