@@ -1279,18 +1279,29 @@ async function setupVideo() {
 
   videoError.value = ''
   videoLoading.value = true
+  isBuffering.value = false
   isPlaying.value = false
+
+  // Remove all old event listeners first
+  removeVideoEventListeners(el)
 
   // Clear any existing player
   el.pause()
   destroyPlayer()
   el.removeAttribute('src')
-  el.load()
+  
+  // Reset styles to ensure visibility
+  el.style.display = 'block'
+  el.style.visibility = 'visible'
+  el.style.opacity = '1'
+  el.style.width = '100%'
+  el.style.height = '100%'
 
   // Apply saved volume settings to video element before setting up player
   loadVolumeSettings()
   el.volume = volume.value
   el.muted = isMuted.value
+  el.crossOrigin = 'anonymous'
 
   // Determine if we should try direct URL first
   const currentSource = resolvedList.value[currentSourceIndex.value]
@@ -1322,109 +1333,106 @@ async function setupVideo() {
 
       // Use Video.js for HLS streams (direct or proxied)
       const VideoJS = await loadVideoJS()
+      
+      // Dispose old player if exists
+      if (player) {
+        try {
+          player.dispose()
+        } catch (e) {
+          console.warn('Error disposing old player:', e)
+        }
+      }
+
       player = VideoJS(el, {
         controls: false, // We use custom controls
-        autoplay: true, // Enable autoplay
-        muted: false, // Don't mute by default
-        preload: 'metadata',
+        autoplay: false, // Don't autoplay initially - we'll manually control it
+        muted: isMuted.value,
+        preload: 'auto',
         html5: {
           hls: {
-            overrideNative: true, // Use video.js HLS plugin
+            overrideNative: true,
             enableLowInitialPlaylist: true,
             smoothQualityChange: true,
-            // Better seeking configuration
             maxBufferLength: 30,
             maxMaxBufferLength: 600,
-            maxBufferSize: 60 * 1000 * 1000, // 60MB
-            maxBufferHole: 0.5,
-            maxSeekHole: 2,
-            seekHoleNudgeDuration: 0.1,
-            // Retry settings
-            levelLoadingMaxRetry: 4,
-            levelLoadingMaxRetryTimeout: 4000,
-            fragLoadingMaxRetry: 6,
-            fragLoadingMaxRetryTimeout: 4000,
-            // Performance
-            enableWorker: true,
-            startLevel: -1,
             debug: debug.value,
           },
           nativeAudioTracks: false,
           nativeVideoTracks: false,
         },
-        // Additional options for better performance
-        liveui: false,
         responsive: true,
         fluid: true,
       })
 
-      // Attach video element events BEFORE setting source
-      handleVideoEvents()
-
-       // Set up video.js event handlers
-       player.on('error', (e: any) => {
-          console.error('Video.js error:', e)
-         const error = player.error()
-         if (error) {
-           videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
-           videoLoading.value = false
-           handleVideoError(error, 'videojs')
-         }
-       })
-
-      player.on('loadedmetadata', () => {
-        // Handle loaded metadata
-        handleLoadedMetadata()
-      })
-
-      player.on('canplay', () => {
-        videoLoading.value = false
-      })
-
-       player.on('waiting', () => {
-         isBuffering.value = true
-         videoLoading.value = true
-       })
-
-       player.on('playing', () => {
-         isBuffering.value = false
-         videoLoading.value = false
-       })
-
-       player.on('canplay', () => {
-         isBuffering.value = false
-         videoLoading.value = false
-       })
-
-      // Apply volume settings to Video.js player
-      player.volume(volume.value)
-      player.muted(isMuted.value)
-
-      // Set the source
+      // Set the source first
+      console.log('Setting HLS source:', playUrl.value)
       player.src({
         src: playUrl.value,
         type: 'application/x-mpegURL'
       })
 
+      // Set up video.js event handlers
+      player.off('error')
+      player.off('loadedmetadata')
+      player.off('canplay')
+      player.off('waiting')
+      player.off('playing')
+
+      player.on('error', () => {
+        const error = player.error()
+        if (error) {
+          console.error('Video.js HLS error:', error)
+          videoError.value = `Erreur vidéo: ${error.message || 'Unknown error'}`
+          videoLoading.value = false
+          handleVideoError(error, 'videojs-hls')
+        }
+      })
+
+      player.on('loadedmetadata', () => {
+        console.log('HLS metadata loaded')
+        videoLoading.value = false
+        isBuffering.value = false
+        handleLoadedMetadata()
+      })
+
+      player.on('canplay', () => {
+        console.log('HLS can play')
+        videoLoading.value = false
+        isBuffering.value = false
+      })
+
+      player.on('waiting', () => {
+        isBuffering.value = true
+      })
+
+      player.on('playing', () => {
+        isBuffering.value = false
+      })
+
+      // Apply volume settings to Video.js player
+      player.volume(volume.value)
+      player.muted(isMuted.value)
+
       // Load the video
       player.load()
 
-      // Try to play with autoplay
-      player.play().catch((e: any) => {
-        videoLoading.value = false // Allow user interaction
-        // Don't show error for autoplay prevention - it's expected
-      })
+      // Try to play after a brief delay
+      await nextTick()
+      const playPromise = player.play()
+      if (playPromise) {
+        playPromise.catch((e: any) => {
+          console.debug('HLS autoplay prevented:', e.message)
+          videoLoading.value = false
+        })
+      }
 
       // Set timeout for loading
+      if (hlsLoadTimeout) clearTimeout(hlsLoadTimeout)
       hlsLoadTimeout = setTimeout(() => {
-        console.warn('HLS loading timeout, trying next source')
-        destroyPlayer()
-        videoError.value = 'Timeout lors du chargement de la vidéo HLS'
+        console.warn('HLS loading timeout')
         videoLoading.value = false
-        setTimeout(() => {
-          tryNextSource()
-        }, 500)
-      }, 10000)
+        isBuffering.value = false
+      }, 15000)
     } else {
       // For MP4 and other direct video files, try direct access first
       if (shouldTryDirect && !triedDirectUrl.value) {
@@ -1444,47 +1452,26 @@ async function setupVideo() {
       }
 
       // Use native video element for MP4
+      console.log('Setting native video source:', playUrl.value)
       el.src = playUrl.value
-      el.autoplay = true // Enable autoplay for native video
 
       // Attach video element events
       handleVideoEvents()
 
-      // Add specific event listeners for native video loading
-      const onCanPlay = () => {
-        videoLoading.value = false
-        el.removeEventListener('canplay', onCanPlay)
-      }
-      const onLoadedData = () => {
-        videoLoading.value = false
-        el.removeEventListener('loadeddata', onLoadedData)
-      }
-      const onError = (e: Event) => {
-        console.error('Native video error:', e)
-        videoError.value = 'Erreur de chargement vidéo'
-        videoLoading.value = false
-        el.removeEventListener('error', onError)
-      }
-
-      el.addEventListener('canplay', onCanPlay)
-      el.addEventListener('loadeddata', onLoadedData)
-      el.addEventListener('error', onError)
-
       // Try to play
+      await nextTick()
       el.play().catch(e => {
-        videoLoading.value = false // Allow user interaction
+        console.debug('Native video autoplay prevented:', e.message)
+        videoLoading.value = false
       })
 
-      // Add safety timeout for native video
+      // Set a reasonable timeout for video loading
       const safetyTimeout = setTimeout(() => {
         if (videoLoading.value) {
-          console.warn('Safety timeout: clearing loading state after 10 seconds (native)')
+          console.warn('Safety timeout: clearing loading state after 15 seconds')
           videoLoading.value = false
         }
-      }, 10000)
-
-      // Remove the aggressive timeout for native video - let it load naturally
-      // Large MP4 files may take time to buffer
+      }, 15000)
     }
 
   } catch (error) {
@@ -2203,10 +2190,17 @@ async function resolveEpisode() {
 }
 
 watch([showPlayer, playUrl], async () => {
-  if (!showPlayer.value) { destroyPlayer(); return }
-  await nextTick();
-  setupVideo()
-})
+  if (!showPlayer.value) { 
+    destroyPlayer()
+    return 
+  }
+  
+  // Only setup video if we have a valid playUrl
+  if (playUrl.value && playUrl.value.trim()) {
+    await nextTick()
+    setupVideo()
+  }
+}, { immediate: false })
 
 // Preload next episode URLs for faster navigation
 async function preloadNextEpisode() {

@@ -154,35 +154,20 @@ import type { SearchResponse } from "../types/searchResponse";
 export function parseAnimeResults(html: string, baseUrl?: string): SearchResponse {
   const results: SearchResponse = [];
 
-  // Accept both the configured baseUrl and anime-sama domains
-  const acceptedDomains = [
-    (baseUrl || 'https://179.43.149.218').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-    'https://anime-sama\\.fr',
-    'https://anime-sama\\.org'
-  ];
-
-  const domainPattern = `(${acceptedDomains.join('|')})`;
-
   // Try multiple regex patterns to handle different HTML structures
+  // Ignoring domain pattern - accept any domain
   const regexPatterns = [
+    // New pattern with asn-search-result classes and subtitle <p>
+    /<a[^>]*class="asn-search-result"[^>]*href="[^"]*\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*class="asn-search-result-title"[^>]*>([^<]*)<\/h3>[\s\S]*?<p[^>]*class="asn-search-result-subtitle"[^>]*>([^<]*)<\/p>[\s\S]*?<\/a>/gi,
     // Original pattern with <p> for aliases
-    new RegExp(
-      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?<p[^>]*>([^<]*)</p>[\\s\\S]*?</a>`,
-      'g'
-    ),
+    /<a[^>]*href="[^"]*\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>[\s\S]*?<p[^>]*>([^<]*)<\/p>[\s\S]*?<\/a>/gi,
     // Pattern without <p> (title only)
-    new RegExp(
-      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<h3[^>]*>([^<]*)</h3>[\\s\\S]*?</a>`,
-      'g'
-    ),
+    /<a[^>]*href="[^"]*\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*>([^<]*)<\/h3>[\s\S]*?<\/a>/gi,
     // Alternative pattern with div instead of h3
-    new RegExp(
-      `<a[^>]*href="${domainPattern}\\/catalogue\\/([^"]*)"[^>]*>[\\s\\S]*?<img[^>]*src="([^"]*)"[^>]*>[\\s\\S]*?<div[^>]*>([^<]*)</div>[\\s\\S]*?</a>`,
-      'g'
-    )
+    /<a[^>]*href="[^"]*\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<div[^>]*>([^<]*)<\/div>[\s\S]*?<\/a>/gi
   ];
 
-  console.log(`[PARSE_SEARCH] Parsing HTML with accepted domains: ${acceptedDomains.join(', ')}`)
+  console.log(`[PARSE_SEARCH] Parsing HTML (accepting any domain)`)
 
   for (let patternIndex = 0; patternIndex < regexPatterns.length; patternIndex++) {
     const animeRegex = regexPatterns[patternIndex];
@@ -196,13 +181,12 @@ export function parseAnimeResults(html: string, baseUrl?: string): SearchRespons
     while ((match = animeRegex.exec(html)) !== null) {
       matchCount++;
       const groups = match.length;
-      const domain = match[1]; // The matched domain
-      const slug = match[2]; // The catalogue slug
-      const image = match[3];
-      const title = match[4];
-      const aliasesText = groups > 5 ? match[5] : ''; // aliases might not exist in some patterns
+      const slug = match[1]; // The catalogue slug
+      const image = match[2];
+      const title = match[3];
+      const aliasesText = groups > 4 ? match[4] : ''; // aliases might not exist in some patterns
 
-      console.log(`[PARSE_SEARCH] Pattern ${patternIndex + 1} match ${matchCount}: title="${title}", slug="${slug}", domain="${domain}", image="${image}"`)
+      console.log(`[PARSE_SEARCH] Pattern ${patternIndex + 1} match ${matchCount}: title="${title}", slug="${slug}", image="${image}"`)
 
       if (!title?.trim() || !slug) {
         console.log(`[PARSE_SEARCH] Skipping match ${matchCount}: missing title or slug`)
@@ -211,9 +195,9 @@ export function parseAnimeResults(html: string, baseUrl?: string): SearchRespons
 
       const aliases = aliasesText?.trim()
         ? aliasesText
-            .split(",")
-            .map((alias) => alias.trim())
-            .filter(Boolean)
+          .split(",")
+          .map((alias) => alias.trim())
+          .filter(Boolean)
         : [];
 
       // The slug is already extracted correctly
@@ -256,23 +240,37 @@ export interface CatalogueItem {
 export function parseCataloguePage(html: string): CatalogueItem[] {
   const items: CatalogueItem[] = [];
 
-  // Updated regex to match new structure: <a href="https://anime-sama.org/catalogue/slug/"> ... <img src="image"> ... <h2 class="card-title">title</h2> ... </a>
-  const itemRegex = /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h2[^>]*class="card-title"[^>]*>([^<]*)<\/h2>/gi;
+  // Try multiple regex patterns to handle different HTML structures
+  const itemRegexPatterns = [
+    // New structure with asn-search-result classes
+    /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*class="asn-search-result"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h3[^>]*class="asn-search-result-title"[^>]*>([^<]*)<\/h3>/gi,
+    // Old structure with card-title
+    /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<h2[^>]*class="card-title"[^>]*>([^<]*)<\/h2>/gi,
+    // Fallback pattern without specific classes
+    /<a[^>]*href="(?:https?:\/\/[^\/]+)?\/catalogue\/([^"\/]+)\/?[^"]*"[^>]*>[\s\S]*?<img[^>]*src="([^"]*)"[^>]*>[\s\S]*?<(?:h2|h3)[^>]*>([^<]*)<\/(?:h2|h3)>/gi,
+  ];
 
-  let match;
-  while ((match = itemRegex.exec(html)) !== null) {
-    const slug = match[1];
-    const image = match[2];
-    const title = match[3]?.trim() || "";
+  for (const itemRegex of itemRegexPatterns) {
+    let match;
+    while ((match = itemRegex.exec(html)) !== null) {
+      const slug = match[1];
+      const image = match[2];
+      const title = match[3]?.trim() || "";
 
-    if (slug && image && title) {
-      // Determine type: default to Anime, check for Scans or Film
-      let type: string = 'Anime';
-      const anchorText = match[0];
-      if (anchorText.includes(' Scans')) type = 'Scans';
-      else if (anchorText.includes(' Film ')) type = 'Film';
+      if (slug && image && title) {
+        // Determine type: default to Anime, check for Scans or Film
+        let type: string = 'Anime';
+        const anchorText = match[0];
+        if (anchorText.includes(' Scans')) type = 'Scans';
+        else if (anchorText.includes(' Film ')) type = 'Film';
 
-      items.push({ id: slug, title, image, type });
+        items.push({ id: slug, title, image, type });
+      }
+    }
+
+    // If we found results with this pattern, stop trying other patterns
+    if (items.length > 0) {
+      break;
     }
   }
 
