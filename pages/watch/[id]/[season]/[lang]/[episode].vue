@@ -1161,6 +1161,14 @@ function skipToEnd(skipType: 'op' | 'ed') {
   }
 }
 
+function skipOp() {
+  skipToEnd('op')
+}
+
+function skipEd() {
+  skipToEnd('ed')
+}
+
 function hideSkipButtons() {
   showSkipButtons.value = false
   const skipType = currentSkipType.value
