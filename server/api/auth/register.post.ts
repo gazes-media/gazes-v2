@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
     if (!email || !username || !password) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Email, nom d\'utilisateur et mot de passe requis'
+        message: 'Email, nom d\'utilisateur et mot de passe requis'
       })
     }
 
@@ -19,7 +19,7 @@ export default defineEventHandler(async (event) => {
     if (password.length < 6) {
       throw createError({
         statusCode: 400,
-        statusMessage: 'Le mot de passe doit contenir au moins 6 caractères'
+        message: 'Le mot de passe doit contenir au moins 6 caractères'
       })
     }
 
@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     if (error.message?.includes('already exists')) {
       throw createError({
         statusCode: 409,
-        statusMessage: 'Un utilisateur avec cet email existe déjà'
+        message: 'Un utilisateur avec cet email existe déjà'
       })
     }
 

@@ -74,20 +74,20 @@ export class AuthService {
   /**
     * Verify and decode a JWT token
     */
-   static verifyToken(token: string, type: 'access' | 'refresh' = 'access'): JWTPayload {
-     const config = useRuntimeConfig()
-     const secret = type === 'access' ? config.jwtSecret : config.jwtRefreshSecret
+  static verifyToken(token: string, type: 'access' | 'refresh' = 'access'): JWTPayload {
+    const config = useRuntimeConfig()
+    const secret = type === 'access' ? config.jwtSecret : config.jwtRefreshSecret
 
-     try {
-       const decoded = jwt.verify(token, secret, { issuer: 'gazes-app' }) as JWTPayload
-       return decoded
-     } catch (error) {
-       throw createError({
-         statusCode: 401,
-         statusMessage: 'Invalid token'
-       })
-     }
-   }
+    try {
+      const decoded = jwt.verify(token, secret, { issuer: 'gazes-app' }) as JWTPayload
+      return decoded
+    } catch (error) {
+      throw createError({
+        statusCode: 401,
+        message: 'Invalid token'
+      })
+    }
+  }
 
   /**
    * Create a new user

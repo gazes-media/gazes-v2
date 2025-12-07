@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
     if (!refreshToken) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Refresh token manquant'
+        message: 'Refresh token manquant'
       })
     }
 
@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
     if (!user) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Utilisateur non trouvé'
+        message: 'Utilisateur non trouvé'
       })
     }
 

@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     if (!user) {
       throw createError({
         statusCode: 401,
-        statusMessage: 'Non authentifié'
+        message: 'Non authentifié'
       })
     }
 
@@ -343,7 +343,7 @@ async function getUserWatchingBehavior(userId: string): Promise<UserWatchingBeha
     if (episodes.length > 1) {
       const sortedByTime = episodes.sort((a, b) => a.lastWatchedAt.getTime() - b.lastWatchedAt.getTime())
       for (let i = 1; i < sortedByTime.length; i++) {
-        const timeDiff = sortedByTime[i].lastWatchedAt.getTime() - sortedByTime[i-1].lastWatchedAt.getTime()
+        const timeDiff = sortedByTime[i].lastWatchedAt.getTime() - sortedByTime[i - 1].lastWatchedAt.getTime()
         if (timeDiff < 24 * 60 * 60 * 1000) { // Within 24 hours
           bingeScoreLocal += 1
         }
@@ -480,7 +480,7 @@ function generatePersonalizedReason(
   }
 }
 
-async function findSimilarUsers(userId: string): Promise<Array<{userId: string, similarity: number}>> {
+async function findSimilarUsers(userId: string): Promise<Array<{ userId: string, similarity: number }>> {
   const db = DatabaseService.getInstance()
 
   // Get user's watching behavior for comparison
@@ -490,7 +490,7 @@ async function findSimilarUsers(userId: string): Promise<Array<{userId: string, 
 
   // Get all users and their behavior (simplified - in production you'd optimize this)
   // For now, we'll use a more sophisticated mock based on user's actual behavior
-  const similarUsers: Array<{userId: string, similarity: number}> = []
+  const similarUsers: Array<{ userId: string, similarity: number }> = []
 
   // Create mock similar users based on user's completion patterns and genre preferences
   const userCompletionRate = userBehavior.averageCompletionRate
@@ -545,12 +545,12 @@ async function getAllAnimeMetadata(): Promise<any[]> {
 
         // Filter out scans, manhwa, webcomics, and other non-video content
         return lowerType.includes('scan') ||
-               lowerType.includes('manhwa') ||
-               lowerType.includes('webcomic') ||
-               lowerType.includes('manga') ||
-               lowerType.includes('comic') ||
-               lowerType.includes('raw') ||
-               lowerType === 'scans'
+          lowerType.includes('manhwa') ||
+          lowerType.includes('webcomic') ||
+          lowerType.includes('manga') ||
+          lowerType.includes('comic') ||
+          lowerType.includes('raw') ||
+          lowerType === 'scans'
       })
 
       if (hasNonVideoContent) {
@@ -583,7 +583,7 @@ async function getAllAnimeMetadata(): Promise<any[]> {
   })
 }
 
-async function getMostPopularAnime(limit: number): Promise<Array<{id: string, watchCount: number}>> {
+async function getMostPopularAnime(limit: number): Promise<Array<{ id: string, watchCount: number }>> {
   const db = DatabaseService.getInstance()
 
   // Get all anime metadata

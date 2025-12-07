@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
       if (!user) {
         throw createError({
           statusCode: 401,
-          statusMessage: 'Non authentifié'
+          message: 'Non authentifié'
         })
       }
 
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
       if (!animeId) {
         throw createError({
           statusCode: 400,
-          statusMessage: 'Anime ID manquant'
+          message: 'Anime ID manquant'
         })
       }
 
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
       if (!user) {
         throw createError({
           statusCode: 401,
-          statusMessage: 'Non authentifié'
+          message: 'Non authentifié'
         })
       }
 
@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
       if (!animeId || season === undefined || episode === undefined || currentTime === undefined || duration === undefined) {
         throw createError({
           statusCode: 400,
-          statusMessage: 'Champs requis manquants'
+          message: 'Champs requis manquants'
         })
       }
 
@@ -76,59 +76,59 @@ export default defineEventHandler(async (event) => {
       console.error('❌ [SAVE_PROGRESS] Error occurred:', error)
       throw error
     }
-   } else if (method === 'DELETE') {
-     // DELETE: Remove progress for a specific anime episode or entire series
+  } else if (method === 'DELETE') {
+    // DELETE: Remove progress for a specific anime episode or entire series
 
-     try {
-       // Get authenticated user
-       const user = await AuthService.getUserFromRequest(event)
-       if (!user) {
-         throw createError({
-           statusCode: 401,
-           statusMessage: 'Non authentifié'
-         })
-       }
+    try {
+      // Get authenticated user
+      const user = await AuthService.getUserFromRequest(event)
+      if (!user) {
+        throw createError({
+          statusCode: 401,
+          message: 'Non authentifié'
+        })
+      }
 
-       const animeId = getRouterParam(event, 'animeId')
-       const body = await readBody(event).catch(() => ({})) // Handle cases where no body is provided
-       const { season, episode } = body || {}
+      const animeId = getRouterParam(event, 'animeId')
+      const body = await readBody(event).catch(() => ({})) // Handle cases where no body is provided
+      const { season, episode } = body || {}
 
 
-       // Validate input
-       if (!animeId) {
-         throw createError({
-           statusCode: 400,
-           statusMessage: 'Anime ID manquant'
-         })
-       }
+      // Validate input
+      if (!animeId) {
+        throw createError({
+          statusCode: 400,
+          message: 'Anime ID manquant'
+        })
+      }
 
-       const db = DatabaseService.getInstance()
+      const db = DatabaseService.getInstance()
 
-       if (season !== undefined && episode !== undefined) {
-         // Delete specific episode progress
-         await db.deleteWatchingProgress(user.id, animeId, season, episode)
-       } else {
-         // Delete all progress for this anime series
-         const allProgress = await db.getAllUserWatchingProgress(user.id)
-         const animeProgress = allProgress.filter((p: any) => p.animeId === animeId)
+      if (season !== undefined && episode !== undefined) {
+        // Delete specific episode progress
+        await db.deleteWatchingProgress(user.id, animeId, season, episode)
+      } else {
+        // Delete all progress for this anime series
+        const allProgress = await db.getAllUserWatchingProgress(user.id)
+        const animeProgress = allProgress.filter((p: any) => p.animeId === animeId)
 
-         for (const progress of animeProgress) {
-           await db.deleteWatchingProgress(user.id, animeId, progress.season, progress.episode)
-         }
+        for (const progress of animeProgress) {
+          await db.deleteWatchingProgress(user.id, animeId, progress.season, progress.episode)
+        }
 
-       }
+      }
 
-       return {
-         success: true
-       }
-     } catch (error) {
-       console.error('❌ [DELETE_PROGRESS] Error occurred:', error)
-       throw error
-     }
-   } else {
-     throw createError({
-       statusCode: 405,
-       statusMessage: 'Méthode non autorisée'
-     })
-   }
+      return {
+        success: true
+      }
+    } catch (error) {
+      console.error('❌ [DELETE_PROGRESS] Error occurred:', error)
+      throw error
+    }
+  } else {
+    throw createError({
+      statusCode: 405,
+      message: 'Méthode non autorisée'
+    })
+  }
 })

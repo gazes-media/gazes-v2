@@ -124,7 +124,7 @@ export function createRateLimitMiddleware(options: RateLimitOptions) {
     if (!result.allowed) {
       throw createError({
         statusCode: 429,
-        statusMessage: 'Too Many Requests',
+        message: 'Too Many Requests',
         data: {
           error: 'Rate limit exceeded',
           retryAfter: Math.ceil((result.resetTime - Date.now()) / 1000)
