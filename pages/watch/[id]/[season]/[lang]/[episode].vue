@@ -2576,7 +2576,7 @@ watch([showEpisodes, episodesList, loadingEpisodes], () => {
       @set-speed="setPlaybackSpeed"
       @select-quality="selectQuality"
       @toggle-fullscreen="toggleFullscreen"
-      @toggle-episodes="showEpisodes = !showEpisodes"
+      @toggle-episodes="toggleEpisodesPanel"
       @interaction="showControlsTemporarily"
     />
 
